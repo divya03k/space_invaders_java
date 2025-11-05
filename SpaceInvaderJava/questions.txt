@@ -1,0 +1,25 @@
+What is JVM?|A Virtual Machine|Java Version Manager|Java Virtual Method|Java Value Memory|A Virtual Machine
+What is the size of int in Java?|2 bytes|4 bytes|8 bytes|16 bytes|4 bytes
+Which keyword is used to inherit a class?|inherit|extends|super|implements|extends
+Which of these is not a primitive data type in Java?|int|float|string|boolean|string
+Which function is used to read user input in Java?|scan()|readInput()|Scanner.next()|input.read()|Scanner.next()
+What is the default value of a boolean variable in Java?|true|false|null|undefined|false
+Which of the following is not a Java access modifier?|public|private|protected|global|global
+What is the superclass of all Java classes?|Object|Main|Base|Super|Object
+Which keyword is used to define a constant variable?|constant|final|static|immutable|final
+What does the ‘static’ keyword mean in Java?|A method cannot be overridden|A method belongs to an instance|A method belongs to a class|A method is private|A method belongs to a class
+Which of these is not a valid Java loop?|for|foreach|while|repeat|repeat
+What is the return type of a constructor?|void|class type|static|None|None
+Which package is imported by default in Java?|java.util|java.lang|java.io|javax.swing|java.lang
+Which of these statements is used to handle exceptions?|catch|try|throw|All of the above|All of the above
+What is the purpose of the ‘super’ keyword?|Access parent class members|Create an instance of a class|Call a child class method|Terminate a loop|Access parent class members
+Which data structure follows FIFO?|Stack|Queue|LinkedList|ArrayList|Queue
+What is method overloading in Java?|Redefining a method in a subclass|Same method name with different parameters|Using the same method in multiple classes|Replacing an old method with a new one|Same method name with different parameters
+What does the ‘this’ keyword refer to?|Current instance of a class|Parent class instance|Static method|Superclass method|Current instance of a class
+Which interface provides a method to compare objects?|Comparator|Comparable|Equals|ComparatorFactory|Comparable
+How can you achieve multiple inheritance in Java?|Using interfaces|Using abstract classes|Using multiple superclasses|Using the extends keyword|Using interfaces
+Which of the following collections is synchronized?|ArrayList|LinkedList|Vector|HashSet|Vector
+What will happen if the main() method is declared as private?|Compilation error|Runtime error|Program executes normally|Infinite loop|Compilation error
+Which function is used to start a thread in Java?|run()|start()|execute()|call()|start()
+Which keyword is used to prevent method overriding?|static|abstract|final|override|final
+Which class is used to handle file operations in Java?|FileHandler|FileReader|File|FileManager|File
