@@ -3,22 +3,24 @@ from flask_cors import CORS
 import hashlib
 import os
 import firebase_admin
-from firebase_admin import credentials, db
+from firebase_admin import credentials, db,firestore
 
 
 app = Flask(__name__)
 CORS(app)
 
-
-
-FIREBASE_CRED = "serviceAccountKey.json"
 FIREBASE_DB_URL = "https://spaceinvadersjava-default-rtdb.firebaseio.com/" # <-- replace with YOUR Firebase URL
 
-if not firebase_admin._apps:
-    cred = credentials.Certificate(FIREBASE_CRED)
-    firebase_admin.initialize_app(cred, {
-        "databaseURL": FIREBASE_DB_URL
-    })
+if os.getenv("FIREBASE_CRED"):
+    # Load from environment variable
+    cred_dict = json.loads(os.getenv("FIREBASE_CRED"))
+    cred = credentials.Certificate(cred_dict)
+else:
+    # Local development fallback
+    cred = credentials.Certificate("SpaceInvaderJava/serviceAccountKey.json")
+
+firebase_admin.initialize_app(cred)
+db = firestore.client()
 
 
 leaderboard_ref = db.reference("leaderboard")
@@ -130,3 +132,4 @@ def upload_questions():
 
 if __name__ == "__main__":
     app.run(host="0.0.0.0", port=5000, debug=True)
+
