@@ -2,48 +2,61 @@ from flask import Flask, request, jsonify
 from flask_cors import CORS
 import hashlib
 import os
+import json
 import firebase_admin
-from firebase_admin import credentials, db,firestore
+from firebase_admin import credentials, db
 
-
+# ---------------------------------------------------------------------
+# 🌐 Flask App Setup
+# ---------------------------------------------------------------------
 app = Flask(__name__)
 CORS(app)
 
-FIREBASE_DB_URL = "https://spaceinvadersjava-default-rtdb.firebaseio.com/" # <-- replace with YOUR Firebase URL
+# ---------------------------------------------------------------------
+# 🔥 Firebase Initialization
+# ---------------------------------------------------------------------
+FIREBASE_DB_URL = "https://spaceinvadersjava-default-rtdb.firebaseio.com/"  # ✅ Replace with your Firebase Realtime DB URL
 
+# Load credentials (from Render env or local file)
 if os.getenv("FIREBASE_CRED"):
-    # Load from environment variable
     cred_dict = json.loads(os.getenv("FIREBASE_CRED"))
     cred = credentials.Certificate(cred_dict)
 else:
-    # Local development fallback
     cred = credentials.Certificate("SpaceInvaderJava/serviceAccountKey.json")
 
-firebase_admin.initialize_app(cred)
-db = firestore.client()
+firebase_admin.initialize_app(cred, {
+    'databaseURL': FIREBASE_DB_URL
+})
 
-
+# Firebase Database References
 leaderboard_ref = db.reference("leaderboard")
 admin_users_ref = db.reference("admin_users")
 
 QUESTIONS_FILE = "questions.txt"
 
+# ---------------------------------------------------------------------
+# ✅ Root Route
+# ---------------------------------------------------------------------
 @app.route("/")
 def home():
-    return jsonify({"message": "Java Quiz Game API (Firebase) is running successfully!"})
+    return jsonify({"message": "Java Quiz Game API (Firebase Realtime DB) is running successfully!"})
 
-
+# ---------------------------------------------------------------------
+# 🏆 Get Leaderboard
+# ---------------------------------------------------------------------
 @app.route("/api/leaderboard", methods=["GET"])
 def get_leaderboard():
     try:
         data = leaderboard_ref.get() or {}
-        # Sort by score (descending)
         sorted_data = sorted(data.items(), key=lambda x: x[1].get("score", 0), reverse=True)
         leaderboard = [{"player_name": k, **v} for k, v in sorted_data]
         return jsonify(leaderboard)
     except Exception as e:
         return jsonify({"error": str(e)}), 500
 
+# ---------------------------------------------------------------------
+# 🆕 Update / Add Player Score
+# ---------------------------------------------------------------------
 @app.route("/api/update_score", methods=["POST"])
 def update_score():
     try:
@@ -64,7 +77,9 @@ def update_score():
     except Exception as e:
         return jsonify({"error": str(e)}), 500
 
-
+# ---------------------------------------------------------------------
+# 🔐 Admin Login
+# ---------------------------------------------------------------------
 @app.route("/api/admin_login", methods=["POST"])
 def admin_login():
     try:
@@ -75,7 +90,6 @@ def admin_login():
         if not username or not password:
             return jsonify({"error": "Missing credentials"}), 400
 
-        # Get admin data from Firebase
         admin_data = admin_users_ref.child(username).get()
 
         if not admin_data:
@@ -90,7 +104,9 @@ def admin_login():
     except Exception as e:
         return jsonify({"error": str(e)}), 500
 
-
+# ---------------------------------------------------------------------
+# 📋 Get All Questions
+# ---------------------------------------------------------------------
 @app.route("/api/get_questions", methods=["GET"])
 def get_questions():
     if not os.path.exists(QUESTIONS_FILE):
@@ -113,7 +129,9 @@ def get_questions():
 
     return jsonify(questions)
 
-
+# ---------------------------------------------------------------------
+# 📤 Upload Questions
+# ---------------------------------------------------------------------
 @app.route("/api/upload_questions", methods=["POST"])
 def upload_questions():
     try:
@@ -129,7 +147,8 @@ def upload_questions():
     except Exception as e:
         return jsonify({"error": str(e)}), 500
 
-
+# ---------------------------------------------------------------------
+# 🚀 Run the app
+# ---------------------------------------------------------------------
 if __name__ == "__main__":
     app.run(host="0.0.0.0", port=5000, debug=True)
-
