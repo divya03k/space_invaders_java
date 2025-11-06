@@ -1,5 +1,5 @@
-pygame
-mysql-connector-python
 Flask
 Flask-Cors
-
+firebase-admin
+google-cloud-firestore
+python-dotenv
