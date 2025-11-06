@@ -13,30 +13,51 @@ app = Flask(__name__)
 CORS(app)
 
 # ---------------------------------------------------------------------
-# 🔥 Firebase Initialization
+# 🔥 Firebase Initialization (Local + Render Compatible)
 # ---------------------------------------------------------------------
-FIREBASE_DB_URL = "https://spaceinvadersjava-default-rtdb.firebaseio.com/"  # ✅ Replace with your Firebase Realtime DB URL
+def init_firebase():
+    try:
+        if firebase_admin._apps:
+            return  # already initialized
 
-# Load credentials (from Render env or local file)
+        cred_json = os.environ.get("FIREBASE_CRED")
+        db_url = os.environ.get("FIREBASE_DB_URL")
 
+        if cred_json and db_url:
+            # Running on Render (using environment vars)
+            cred_dict = json.loads(cred_json)
+            cred = credentials.Certificate(cred_dict)
+            firebase_admin.initialize_app(cred, {"databaseURL": db_url})
+            print("✅ Firebase initialized using environment variables")
+        else:
+            # Running locally (using JSON file)
+            local_path = os.path.join(os.path.dirname(__file__), "serviceAccountKey.json")
 
-# Firebase Database References
+            if not os.path.exists(local_path):
+                raise FileNotFoundError(f"Firebase credential file not found at {local_path}")
+
+            cred = credentials.Certificate(local_path)
+            firebase_admin.initialize_app(cred, {
+                "databaseURL": "https://space-invaders-java-default-rtdb.firebaseio.com/"
+            })
+            print("✅ Firebase initialized using local credentials")
+
+    except Exception as e:
+        print(f"🔥 Firebase initialization failed: {e}")
+        raise
+
+# Initialize Firebase
+init_firebase()
+
+# ---------------------------------------------------------------------
+# 🔗 Firebase Database References
+# ---------------------------------------------------------------------
 leaderboard_ref = db.reference("leaderboard")
 admin_users_ref = db.reference("admin_users")
 
-QUESTIONS_FILE = "questions.txt"
+QUESTIONS_FILE = os.path.join(os.path.dirname(__file__), "questions.txt")
 
-# --------------cred_json = os.environ.get("FIREBASE_CRED")
-if not cred_json:
-    raise ValueError("FIREBASE_CRED environment variable not found!")
-
-# Parse JSON string
-cred_dict = json.loads(cred_json)
-
-cred = credentials.Certificate(cred_dict)
-firebase_admin.initialize_app(cred, {
-    'databaseURL': os.environ.get("FIREBASE_DB_URL")
-})-------------------------------------------------------
+# ---------------------------------------------------------------------
 # ✅ Root Route
 # ---------------------------------------------------------------------
 @app.route("/")
@@ -54,6 +75,7 @@ def get_leaderboard():
         leaderboard = [{"player_name": k, **v} for k, v in sorted_data]
         return jsonify(leaderboard)
     except Exception as e:
+        print("⚠️ Firebase leaderboard fetch error:", e)
         return jsonify({"error": str(e)}), 500
 
 # ---------------------------------------------------------------------
@@ -77,6 +99,7 @@ def update_score():
 
         return jsonify({"success": True, "message": "Score updated successfully!"})
     except Exception as e:
+        print("⚠️ Firebase update failed:", e)
         return jsonify({"error": str(e)}), 500
 
 # ---------------------------------------------------------------------
@@ -93,7 +116,6 @@ def admin_login():
             return jsonify({"error": "Missing credentials"}), 400
 
         admin_data = admin_users_ref.child(username).get()
-
         if not admin_data:
             return jsonify({"error": "Invalid username"}), 401
 
@@ -102,8 +124,8 @@ def admin_login():
             return jsonify({"success": True, "message": "Login successful!"}), 200
         else:
             return jsonify({"error": "Invalid password"}), 401
-
     except Exception as e:
+        print("⚠️ Admin login error:", e)
         return jsonify({"error": str(e)}), 500
 
 # ---------------------------------------------------------------------
@@ -119,16 +141,14 @@ def get_questions():
         for line in f:
             parts = [p.strip() for p in line.split("|")]
             if len(parts) >= 6:
-                question_data = {
+                questions.append({
                     "question": parts[0],
                     "option1": parts[1],
                     "option2": parts[2],
                     "option3": parts[3],
                     "option4": parts[4],
                     "correct_answer": parts[5]
-                }
-                questions.append(question_data)
-
+                })
     return jsonify(questions)
 
 # ---------------------------------------------------------------------
@@ -147,6 +167,7 @@ def upload_questions():
 
         return jsonify({"success": True, "message": "Questions added successfully!"})
     except Exception as e:
+        print("⚠️ Upload questions error:", e)
         return jsonify({"error": str(e)}), 500
 
 # ---------------------------------------------------------------------
@@ -154,4 +175,3 @@ def upload_questions():
 # ---------------------------------------------------------------------
 if __name__ == "__main__":
     app.run(host="0.0.0.0", port=5000, debug=True)
-
