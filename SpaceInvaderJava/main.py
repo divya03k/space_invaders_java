@@ -47,7 +47,7 @@ QUIZ_INTERVAL = 10000
 quiz_timer = pygame.time.get_ticks()
 
 # 🌐 --- FIREBASE API BASE URL (replace with your Render link) ---
-API_BASE = "https://your-render-app-url.onrender.com"  # 🔥 Update this once deployed
+API_BASE = "https://space-invaders-java.onrender.com"  # 🔥 Update this once deployed
 
 # --- LOCAL FALLBACK DATABASE (browser-safe) ---
 class WebDatabase:
@@ -589,3 +589,4 @@ async def main():
 # Start the game
 if __name__ == "__main__":
     asyncio.run(main())
+
