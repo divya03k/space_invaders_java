@@ -16,38 +16,14 @@ CORS(app)
 # 🔥 Firebase Initialization (Local + Render Compatible)
 # ---------------------------------------------------------------------
 def init_firebase():
-    try:
-        if firebase_admin._apps:
-            return  # already initialized
+    cred_json = os.getenv("FIREBASE_CREDENTIALS")
+    if not cred_json:
+        raise FileNotFoundError("Missing FIREBASE_CREDENTIALS environment variable")
 
-        cred_json = os.environ.get("FIREBASE_CRED")
-        db_url = os.environ.get("FIREBASE_DB_URL")
-
-        if cred_json and db_url:
-            # Running on Render (using environment vars)
-            cred_dict = json.loads(cred_json)
-            cred = credentials.Certificate(cred_dict)
-            firebase_admin.initialize_app(cred, {"databaseURL": db_url})
-            print("✅ Firebase initialized using environment variables")
-        else:
-            # Running locally (using JSON file)
-            local_path = os.path.join(os.path.dirname(__file__), "serviceAccountKey.json")
-
-            if not os.path.exists(local_path):
-                raise FileNotFoundError(f"Firebase credential file not found at {local_path}")
-
-            cred = credentials.Certificate(local_path)
-            firebase_admin.initialize_app(cred, {
-                "databaseURL": "https://space-invaders-java-default-rtdb.firebaseio.com/"
-            })
-            print("✅ Firebase initialized using local credentials")
-
-    except Exception as e:
-        print(f"🔥 Firebase initialization failed: {e}")
-        raise
-
-# Initialize Firebase
-init_firebase()
+    # Decode the JSON string
+    cred_dict = json.loads(cred_json)
+    cred = credentials.Certificate(cred_dict)
+    firebase_admin.initialize_app(cred)
 
 # ---------------------------------------------------------------------
 # 🔗 Firebase Database References
@@ -175,3 +151,4 @@ def upload_questions():
 # ---------------------------------------------------------------------
 if __name__ == "__main__":
     app.run(host="0.0.0.0", port=5000, debug=True)
+
