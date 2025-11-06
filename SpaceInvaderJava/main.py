@@ -1,6 +1,7 @@
 import pygame, sys, os, random, asyncio
 from random import shuffle
 from datetime import datetime
+import requests
 
 # --- INIT ---
 pygame.init()
@@ -45,20 +46,15 @@ player_name = ""
 QUIZ_INTERVAL = 10000
 quiz_timer = pygame.time.get_ticks()
 
+# 🌐 --- FIREBASE API BASE URL (replace with your Render link) ---
+API_BASE = "https://your-render-app-url.onrender.com"  # 🔥 Update this once deployed
 
-# Web-compatible database simulation using local storage
+# --- LOCAL FALLBACK DATABASE (browser-safe) ---
 class WebDatabase:
     def __init__(self):
         self.scores = []
-        try:
-            # Try to load from browser local storage simulation
-            import json
-            self.scores = json.loads(pygame.localStorage.get("space_shooter_scores", "[]"))
-        except:
-            self.scores = []
 
     def save_score(self, player_name, score, level):
-        # Update existing or add new score
         existing = next((s for s in self.scores if s["player_name"] == player_name), None)
         if existing:
             if score > existing["score"]:
@@ -72,69 +68,76 @@ class WebDatabase:
                 "level": level,
                 "last_played": datetime.now().isoformat()
             })
-
-        # Keep only top 20 scores
         self.scores.sort(key=lambda x: x["score"], reverse=True)
         self.scores = self.scores[:20]
-
-        # Save to localStorage
-        try:
-            import json
-            pygame.localStorage.set("space_shooter_scores", json.dumps(self.scores))
-        except:
-            pass
 
     def get_leaderboard(self, limit=10):
         return [(s["player_name"], s["score"]) for s in self.scores[:limit]]
 
-
-# Initialize web-compatible database
 web_db = WebDatabase()
 
-
-# --- DATABASE ---
+# --- FIREBASE FUNCTIONS ---
 def save_score_to_db(player_name, score, level):
+    """Send player score to Firebase via Flask API"""
     try:
-        # Try MySQL first (for desktop version)
-        import mysql.connector
-        conn = mysql.connector.connect(
-            host="localhost",
-            user="root",
-            password="div*03_08_06",
-            database="space_invaders_db"
-        )
-        cursor = conn.cursor()
-
-        # Check if the player already exists
-        cursor.execute("SELECT score, level FROM leaderboard WHERE player_name = %s", (player_name,))
-        existing_player = cursor.fetchone()
-
-        if existing_player:
-            old_score, old_level = existing_player
-            if score > old_score:
-                cursor.execute("""
-                    UPDATE leaderboard 
-                    SET score = %s, level = %s, last_played = NOW()
-                    WHERE player_name = %s
-                """, (score, level, player_name))
+        response = requests.post(f"{API_BASE}/api/update_score", json={
+            "player_name": player_name,
+            "score": score,
+            "level": level
+        })
+        if response.status_code == 200:
+            print("✅ Score updated in Firebase successfully!")
         else:
-            cursor.execute("""
-                INSERT INTO leaderboard (player_name, score, level, last_played)
-                VALUES (%s, %s, %s, NOW())
-            """, (player_name, score, level))
-
-        conn.commit()
-        print("✅ Leaderboard updated successfully!")
-
-        if conn.is_connected():
-            cursor.close()
-            conn.close()
-
+            print(f"⚠️ Firebase update failed: {response.text}")
     except Exception as e:
-        # Fallback to web storage
-        print(f"MySQL failed, using web storage: {e}")
+        print(f"❌ Error sending score to API: {e}")
         web_db.save_score(player_name, score, level)
 
+def get_leaderboard():
+    """Fetch leaderboard data from Firebase via Flask API"""
+    try:
+        response = requests.get(f"{API_BASE}/api/leaderboard")
+        if response.status_code == 200:
+            data = response.json()
+            return [(entry["player_name"], entry.get("score", 0)) for entry in data]
+        else:
+            print("⚠️ Failed to fetch leaderboard:", response.text)
+            return web_db.get_leaderboard(10)
+    except Exception as e:
+        print(f"❌ Error fetching leaderboard: {e}")
+        return web_db.get_leaderboard(10)
+
+async def display_leaderboard_after_game(screen=screen, font=FONT):
+    """Display leaderboard fetched from Firebase"""
+    leaderboard_data = get_leaderboard()
+
+    screen.fill((0, 0, 0))
+    title = BIGFONT.render("🏆 Leaderboard 🏆", True, (255, 215, 0))
+    screen.blit(title, (250, 80))
+
+    if not leaderboard_data:
+        msg = font.render("No scores yet. Play to be the first!", True, (200, 200, 200))
+        screen.blit(msg, (220, 200))
+    else:
+        y = 160
+        for i, (name, scr) in enumerate(leaderboard_data[:5], start=1):
+            entry_text = font.render(f"{i}. {name} - {scr} pts", True, (255, 255, 255))
+            screen.blit(entry_text, (220, y))
+            y += 60
+
+    note = font.render("Press ENTER to continue", True, (180, 180, 180))
+    screen.blit(note, (WIDTH // 2 - note.get_width() // 2, HEIGHT - 150))
+    pygame.display.flip()
+
+    waiting = True
+    while waiting:
+        for event in pygame.event.get():
+            if event.type == pygame.QUIT:
+                pygame.quit()
+                sys.exit()
+            elif event.type == pygame.KEYDOWN and event.key == pygame.K_RETURN:
+                waiting = False
+        await asyncio.sleep(0)
 
 # --- QUESTIONS ---
 def load_questions(filepath="questions.txt", levels=LEVELS):
@@ -142,7 +145,6 @@ def load_questions(filepath="questions.txt", levels=LEVELS):
         with open(filepath, "r", encoding="utf-8") as f:
             lines = [line.strip() for line in f if line.strip()]
     except:
-        # Fallback questions if file not found
         lines = [
             "What is 2+2?|3|4|5|6|4",
             "Capital of France?|London|Berlin|Paris|Rome|Paris",
@@ -175,24 +177,19 @@ def load_questions(filepath="questions.txt", levels=LEVELS):
                 print(f"Malformed question skipped: {qline}")
     return questions
 
-
 QUESTIONS_BY_LEVEL = load_questions()
-
 
 # --- IMAGE LOADERS ---
 def create_fallback_surface(width, height, color=(100, 100, 100)):
-    """Create a fallback surface if images are not found"""
     surf = pygame.Surface((width, height))
     surf.fill(color)
     return surf
-
 
 def load_image_by_name(base_path, filename_wo_ext):
     for ext in ['.jpg', '.jpeg', '.png']:
         full_path = os.path.join(base_path, filename_wo_ext + ext)
         if os.path.isfile(full_path):
             return pygame.image.load(full_path)
-    # Fallback colored surfaces
     print(f"Image not found: {filename_wo_ext}, using fallback")
     if "background" in filename_wo_ext:
         return create_fallback_surface(WIDTH, HEIGHT, (0, 0, 50))
@@ -203,13 +200,23 @@ def load_image_by_name(base_path, filename_wo_ext):
     else:
         return create_fallback_surface(100, 100, (255, 255, 255))
 
-
 def load_level_assets(level):
     level_path = f"assets/level{level}/"
     bg = pygame.transform.scale(load_image_by_name(level_path, "background"), (WIDTH, HEIGHT))
     player = pygame.transform.scale(load_image_by_name(level_path, "player"), (100, 100))
     enemy = pygame.transform.scale(load_image_by_name(level_path, "enemy"), (80, 80))
     return bg, player, enemy
+
+try:
+    bullet_img = pygame.transform.scale(pygame.image.load("assets/bullet.png"), (25, 50))
+except:
+    bullet_img = create_fallback_surface(25, 50, (255, 255, 0))
+
+# --- (All quiz logic, game loops, etc. remain identical below) ---
+# 💡 Everything after this point remains exactly the same as your original,
+# including show_quiz_question(), reset_game(), prompt_name(), show_game_over(), and main()
+
+# ... (keep your existing rest of code unchanged)
 
 
 try:
@@ -283,21 +290,17 @@ async def show_quiz_question(level):
 # --- LEADERBOARD ---
 def get_leaderboard():
     try:
-        # Try MySQL first
-        import mysql.connector
-        conn = mysql.connector.connect(
-            host="localhost",
-            user="root",
-            password="div*03_08_06",
-            database="space_invaders_db"
-        )
-        cursor = conn.cursor()
-        cursor.execute("SELECT player_name, score FROM leaderboard ORDER BY score DESC LIMIT 10")
-        result = cursor.fetchall()
-        conn.close()
-        return result
-    except:
-        # Fallback to web storage
+        # Fetch leaderboard from Firebase via Flask API
+        response = requests.get("http://127.0.0.1:5000/api/leaderboard")
+        if response.status_code == 200:
+            data = response.json()
+            # Convert list of dicts into [(name, score), ...]
+            return [(entry["player_name"], entry.get("score", 0)) for entry in data]
+        else:
+            print("⚠️ Failed to fetch leaderboard:", response.text)
+            return web_db.get_leaderboard(10)
+    except Exception as e:
+        print(f"API fetch failed: {e}")
         return web_db.get_leaderboard(10)
 
 
@@ -458,7 +461,7 @@ async def show_game_over():
 
 # --- MAIN GAME LOOP ---
 async def main():
-    global level, score, game_over, show_leaderboard, player_name
+    global level, score, game_over, show_leaderboard, player_name, dragging
     global bullets, enemies, player_x, player_y, enemy_spawn_timer
     global background, player_img, enemy_img, bullet_timer, quiz_mode, pending_quiz, quiz_timer
 
