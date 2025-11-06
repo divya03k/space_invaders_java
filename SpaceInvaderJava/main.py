@@ -47,7 +47,8 @@ QUIZ_INTERVAL = 10000
 quiz_timer = pygame.time.get_ticks()
 
 # 🌐 --- FIREBASE API BASE URL (replace with your Render link) ---
-API_BASE = "https://space-invaders-java.onrender.com"  # 🔥 Update this once deployed
+# NOTE: make this include '/api' so calls below are shorter
+API_BASE = "https://space-invaders-java.onrender.com/api"  # <-- set your deployed Render URL here
 
 # --- LOCAL FALLBACK DATABASE (browser-safe) ---
 class WebDatabase:
@@ -76,19 +77,20 @@ class WebDatabase:
 
 web_db = WebDatabase()
 
-# --- FIREBASE FUNCTIONS ---
+# --- FIREBASE / API FUNCTIONS (used by game) ---
 def save_score_to_db(player_name, score, level):
     """Send player score to Firebase via Flask API"""
     try:
-        response = requests.post(f"{API_BASE}/api/update_score", json={
+        response = requests.post(f"{API_BASE}/update_score", json={
             "player_name": player_name,
             "score": score,
             "level": level
-        })
+        }, timeout=6)
         if response.status_code == 200:
             print("✅ Score updated in Firebase successfully!")
         else:
-            print(f"⚠️ Firebase update failed: {response.text}")
+            print(f"⚠️ Firebase update failed: {response.status_code} {response.text}")
+            web_db.save_score(player_name, score, level)
     except Exception as e:
         print(f"❌ Error sending score to API: {e}")
         web_db.save_score(player_name, score, level)
@@ -96,12 +98,12 @@ def save_score_to_db(player_name, score, level):
 def get_leaderboard():
     """Fetch leaderboard data from Firebase via Flask API"""
     try:
-        response = requests.get(f"{API_BASE}/api/leaderboard")
+        response = requests.get(f"{API_BASE}/leaderboard", timeout=6)
         if response.status_code == 200:
             data = response.json()
             return [(entry["player_name"], entry.get("score", 0)) for entry in data]
         else:
-            print("⚠️ Failed to fetch leaderboard:", response.text)
+            print("⚠️ Failed to fetch leaderboard:", response.status_code, response.text)
             return web_db.get_leaderboard(10)
     except Exception as e:
         print(f"❌ Error fetching leaderboard: {e}")
@@ -212,17 +214,6 @@ try:
 except:
     bullet_img = create_fallback_surface(25, 50, (255, 255, 0))
 
-# --- (All quiz logic, game loops, etc. remain identical below) ---
-# 💡 Everything after this point remains exactly the same as your original,
-# including show_quiz_question(), reset_game(), prompt_name(), show_game_over(), and main()
-
-# ... (keep your existing rest of code unchanged)
-
-
-try:
-    bullet_img = pygame.transform.scale(pygame.image.load("assets/bullet.png"), (25, 50))
-except:
-    bullet_img = create_fallback_surface(25, 50, (255, 255, 0))
 
 
 # --- QUIZ ---
@@ -589,4 +580,5 @@ async def main():
 # Start the game
 if __name__ == "__main__":
     asyncio.run(main())
+
 
