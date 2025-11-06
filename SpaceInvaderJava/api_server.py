@@ -18,15 +18,7 @@ CORS(app)
 FIREBASE_DB_URL = "https://spaceinvadersjava-default-rtdb.firebaseio.com/"  # ✅ Replace with your Firebase Realtime DB URL
 
 # Load credentials (from Render env or local file)
-if os.getenv("FIREBASE_CRED"):
-    cred_dict = json.loads(os.getenv("FIREBASE_CRED"))
-    cred = credentials.Certificate(cred_dict)
-else:
-    cred = credentials.Certificate("SpaceInvaderJava/serviceAccountKey.json")
 
-firebase_admin.initialize_app(cred, {
-    'databaseURL': FIREBASE_DB_URL
-})
 
 # Firebase Database References
 leaderboard_ref = db.reference("leaderboard")
@@ -34,7 +26,17 @@ admin_users_ref = db.reference("admin_users")
 
 QUESTIONS_FILE = "questions.txt"
 
-# ---------------------------------------------------------------------
+# --------------cred_json = os.environ.get("FIREBASE_CRED")
+if not cred_json:
+    raise ValueError("FIREBASE_CRED environment variable not found!")
+
+# Parse JSON string
+cred_dict = json.loads(cred_json)
+
+cred = credentials.Certificate(cred_dict)
+firebase_admin.initialize_app(cred, {
+    'databaseURL': os.environ.get("FIREBASE_DB_URL")
+})-------------------------------------------------------
 # ✅ Root Route
 # ---------------------------------------------------------------------
 @app.route("/")
@@ -152,3 +154,4 @@ def upload_questions():
 # ---------------------------------------------------------------------
 if __name__ == "__main__":
     app.run(host="0.0.0.0", port=5000, debug=True)
+
