@@ -215,7 +215,6 @@ except:
     bullet_img = create_fallback_surface(25, 50, (255, 255, 0))
 
 
-
 # --- QUIZ ---
 async def show_quiz_question(level):
     global pending_quiz
@@ -580,5 +579,3 @@ async def main():
 # Start the game
 if __name__ == "__main__":
     asyncio.run(main())
-
-
