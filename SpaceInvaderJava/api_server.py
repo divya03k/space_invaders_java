@@ -1,120 +1,71 @@
 from flask import Flask, request, jsonify
 from flask_cors import CORS
-import hashlib
+import mysql.connector
 import os
-import json
-import firebase_admin
-from firebase_admin import credentials, db
+import hashlib
 
 # ---------------------------------------------------------------------
-# 🌐 Flask App Setup
+# 🌐 Flask Setup
 # ---------------------------------------------------------------------
 app = Flask(__name__)
 CORS(app)
 
 # ---------------------------------------------------------------------
-# 🔥 Firebase Initialization (Local + Render Compatible + Secret File)
+# ⚙️ TiDB (MySQL-Compatible) Database Setup
 # ---------------------------------------------------------------------
-def init_firebase():
+def get_db_connection():
     try:
-        if firebase_admin._apps:
-            print("⚙️ Firebase already initialized.")
-            return firebase_admin.get_app()
-
-        cred_json = os.environ.get("FIREBASE_CRED")
-        db_url = os.environ.get("FIREBASE_DB_URL")
-        secret_file_path = "/etc/secrets/serviceAccountKey.json"  # 🔒 Render Secret File
-
-        # 🟢 1️⃣ Try Secret File (Render Secret Files feature)
-        if os.path.exists(secret_file_path):
-            print(f"🔒 Found Firebase service account secret file at {secret_file_path}")
-            cred = credentials.Certificate(secret_file_path)
-            db_url = db_url or "https://spaceinvadersjava-default-rtdb.firebaseio.com/"
-            firebase_admin.initialize_app(cred, {"databaseURL": db_url})
-            print("✅ Firebase initialized using Render Secret File.")
-            return firebase_admin.get_app()
-
-        # 🟢 2️⃣ Try Environment Variables (Render Env Vars option)
-        elif cred_json and db_url:
-            try:
-                cred_json = cred_json.replace('\\n', '\n').replace('\\\\n', '\n')
-                cred_dict = json.loads(cred_json)
-                if 'private_key' in cred_dict:
-                    cred_dict['private_key'] = cred_dict['private_key'].replace('\\n', '\n')
-                cred = credentials.Certificate(cred_dict)
-                firebase_admin.initialize_app(cred, {"databaseURL": db_url})
-                print("✅ Firebase initialized using Render environment variables.")
-                print(f"✅ Database URL: {db_url}")
-            except json.JSONDecodeError as je:
-                print(f"🔥 JSON parsing error: {je}")
-                print(f"🔥 Credential length: {len(cred_json)}")
-                raise
-            except Exception as e:
-                print(f"🔥 Firebase credential error: {e}")
-                raise
-
-        # 🟢 3️⃣ Try Local File (for local dev)
-        else:
-            local_path = os.path.join(os.path.dirname(__file__), "serviceAccountKey.json")
-            if os.path.exists(local_path):
-                cred = credentials.Certificate(local_path)
-                firebase_admin.initialize_app(cred, {
-                    "databaseURL": "https://spaceinvadersjava-default-rtdb.firebaseio.com/"
-                })
-                print("✅ Firebase initialized using local credentials.")
-            else:
-                print(f"⚠️ Local credential file not found at {local_path}")
-                print("⚠️ Attempting to use environment variables as fallback...")
-                
-                if not cred_json:
-                    raise FileNotFoundError(
-                        f"Firebase credential file not found at {local_path} and FIREBASE_CRED not set.\n"
-                        "Please either:\n"
-                        "1. Place serviceAccountKey.json in SpaceInvaderJava directory, OR\n"
-                        "2. Set FIREBASE_CRED & FIREBASE_DB_URL env vars, OR\n"
-                        "3. Upload key via Render → Secret Files."
-                    )
-                else:
-                    cred_json = cred_json.replace('\\n', '\n').replace('\\\\n', '\n')
-                    cred_dict = json.loads(cred_json)
-                    if 'private_key' in cred_dict:
-                        cred_dict['private_key'] = cred_dict['private_key'].replace('\\n', '\n')
-                    cred = credentials.Certificate(cred_dict)
-                    db_url = db_url or "https://spaceinvadersjava-default-rtdb.firebaseio.com/"
-                    firebase_admin.initialize_app(cred, {"databaseURL": db_url})
-                    print("✅ Firebase initialized using environment variables (fallback).")
-
-        return firebase_admin.get_app()
-
+        connection = mysql.connector.connect(
+            host=os.getenv("TIDB_HOST", "gateway01.ap-southeast-1.prod.aws.tidbcloud.com"),
+            port=int(os.getenv("TIDB_PORT", "4000")),
+            user=os.getenv("TIDB_USER", "root"),
+            password=os.getenv("TIDB_PASSWORD", ""),
+            database=os.getenv("TIDB_DATABASE", "space_invaders_db"),
+            ssl_ca=os.getenv("TIDB_SSL_CA", ""),  # optional for local dev
+        )
+        return connection
     except Exception as e:
-        print(f"🔥 Firebase initialization failed: {e}")
-        print(f"🔥 Error type: {type(e).__name__}")
-        import traceback
-        print(f"🔥 Traceback: {traceback.format_exc()}")
-        raise SystemExit("❌ Stopping app: Firebase initialization unsuccessful!")
+        print(f"🔥 Database connection failed: {e}")
+        raise
 
 # ---------------------------------------------------------------------
-# 🚀 Initialize Firebase FIRST before any db.reference()
+# 🏗️ Database Initialization
 # ---------------------------------------------------------------------
-firebase_app = init_firebase()
+def init_tables():
+    try:
+        conn = get_db_connection()
+        cursor = conn.cursor()
 
-# ---------------------------------------------------------------------
-# 🔗 Firebase Database References (AFTER init)
-# ---------------------------------------------------------------------
-if not firebase_admin._apps:
-    raise SystemExit("❌ Firebase not initialized! Exiting...")
+        cursor.execute("""
+            CREATE TABLE IF NOT EXISTS leaderboard (
+                player_name VARCHAR(100) PRIMARY KEY,
+                score INT DEFAULT 0,
+                level INT DEFAULT 1
+            )
+        """)
 
-leaderboard_ref = db.reference("leaderboard", app=firebase_app)
-admin_users_ref = db.reference("admin_users", app=firebase_app)
+        cursor.execute("""
+            CREATE TABLE IF NOT EXISTS admin_users (
+                username VARCHAR(100) PRIMARY KEY,
+                password_hash VARCHAR(256) NOT NULL
+            )
+        """)
 
-QUESTIONS_FILE = os.path.join(os.path.dirname(__file__), "questions.txt")
+        conn.commit()
+        cursor.close()
+        conn.close()
+        print("✅ TiDB tables initialized successfully.")
+    except Exception as e:
+        print(f"🔥 Table initialization failed: {e}")
+
+init_tables()
 
 # ---------------------------------------------------------------------
 # ✅ Root Route
 # ---------------------------------------------------------------------
 @app.route("/")
 def home():
-    return jsonify({"message": "Java Quiz Game API (Firebase Realtime DB) is running successfully!"})
+    return jsonify({"message": "Java Quiz Game API (TiDB Edition) is running successfully!"})
 
 # ---------------------------------------------------------------------
 # 🏆 Get Leaderboard
@@ -122,12 +73,15 @@ def home():
 @app.route("/api/leaderboard", methods=["GET"])
 def get_leaderboard():
     try:
-        data = leaderboard_ref.get() or {}
-        sorted_data = sorted(data.items(), key=lambda x: x[1].get("score", 0), reverse=True)
-        leaderboard = [{"player_name": k, **v} for k, v in sorted_data]
-        return jsonify(leaderboard)
+        conn = get_db_connection()
+        cursor = conn.cursor(dictionary=True)
+        cursor.execute("SELECT * FROM leaderboard ORDER BY score DESC")
+        data = cursor.fetchall()
+        cursor.close()
+        conn.close()
+        return jsonify(data)
     except Exception as e:
-        print("⚠️ Firebase leaderboard fetch error:", e)
+        print(f"⚠️ Leaderboard fetch error: {e}")
         return jsonify({"error": str(e)}), 500
 
 # ---------------------------------------------------------------------
@@ -144,14 +98,22 @@ def update_score():
         if not player_name or score is None or level is None:
             return jsonify({"error": "Missing required fields"}), 400
 
-        leaderboard_ref.child(player_name).update({
-            "score": score,
-            "level": level
-        })
+        conn = get_db_connection()
+        cursor = conn.cursor()
+
+        cursor.execute("""
+            INSERT INTO leaderboard (player_name, score, level)
+            VALUES (%s, %s, %s)
+            ON DUPLICATE KEY UPDATE score = VALUES(score), level = VALUES(level)
+        """, (player_name, score, level))
+
+        conn.commit()
+        cursor.close()
+        conn.close()
 
         return jsonify({"success": True, "message": "Score updated successfully!"})
     except Exception as e:
-        print("⚠️ Firebase update failed:", e)
+        print(f"⚠️ Update score error: {e}")
         return jsonify({"error": str(e)}), 500
 
 # ---------------------------------------------------------------------
@@ -167,22 +129,31 @@ def admin_login():
         if not username or not password:
             return jsonify({"error": "Missing credentials"}), 400
 
-        admin_data = admin_users_ref.child(username).get()
+        conn = get_db_connection()
+        cursor = conn.cursor(dictionary=True)
+        cursor.execute("SELECT * FROM admin_users WHERE username = %s", (username,))
+        admin_data = cursor.fetchone()
+        cursor.close()
+        conn.close()
+
         if not admin_data:
             return jsonify({"error": "Invalid username"}), 401
 
         hashed_input = hashlib.sha256(password.encode()).hexdigest()
-        if hashed_input == admin_data.get("password_hash"):
-            return jsonify({"success": True, "message": "Login successful!"}), 200
+        if hashed_input == admin_data["password_hash"]:
+            return jsonify({"success": True, "message": "Login successful!"})
         else:
             return jsonify({"error": "Invalid password"}), 401
+
     except Exception as e:
-        print("⚠️ Admin login error:", e)
+        print(f"⚠️ Admin login error: {e}")
         return jsonify({"error": str(e)}), 500
 
 # ---------------------------------------------------------------------
 # 📋 Get All Questions
 # ---------------------------------------------------------------------
+QUESTIONS_FILE = os.path.join(os.path.dirname(__file__), "questions.txt")
+
 @app.route("/api/get_questions", methods=["GET"])
 def get_questions():
     if not os.path.exists(QUESTIONS_FILE):
@@ -223,7 +194,7 @@ def upload_questions():
         return jsonify({"error": str(e)}), 500
 
 # ---------------------------------------------------------------------
-# 🚀 Run the app
+# 🚀 Run App
 # ---------------------------------------------------------------------
 if __name__ == "__main__":
     port = int(os.environ.get("PORT", 5000))
