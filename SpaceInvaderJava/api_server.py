@@ -13,7 +13,7 @@ app = Flask(__name__)
 CORS(app)
 
 # ---------------------------------------------------------------------
-# 🔥 Firebase Initialization (Local + Render Compatible)
+# 🔥 Firebase Initialization (Local + Render Compatible + Secret File)
 # ---------------------------------------------------------------------
 def init_firebase():
     try:
@@ -23,19 +23,24 @@ def init_firebase():
 
         cred_json = os.environ.get("FIREBASE_CRED")
         db_url = os.environ.get("FIREBASE_DB_URL")
+        secret_file_path = "/etc/secrets/serviceAccountKey.json"  # 🔒 Render Secret File
 
-        if cred_json and db_url:
-            # 🟢 Running on Render
+        # 🟢 1️⃣ Try Secret File (Render Secret Files feature)
+        if os.path.exists(secret_file_path):
+            print(f"🔒 Found Firebase service account secret file at {secret_file_path}")
+            cred = credentials.Certificate(secret_file_path)
+            db_url = db_url or "https://spaceinvadersjava-default-rtdb.firebaseio.com/"
+            firebase_admin.initialize_app(cred, {"databaseURL": db_url})
+            print("✅ Firebase initialized using Render Secret File.")
+            return firebase_admin.get_app()
+
+        # 🟢 2️⃣ Try Environment Variables (Render Env Vars option)
+        elif cred_json and db_url:
             try:
-                # Handle escaped newlines in environment variable
-                # Replace both \\n and actual \n patterns
                 cred_json = cred_json.replace('\\n', '\n').replace('\\\\n', '\n')
                 cred_dict = json.loads(cred_json)
-                
-                # Ensure private_key has proper newlines
                 if 'private_key' in cred_dict:
                     cred_dict['private_key'] = cred_dict['private_key'].replace('\\n', '\n')
-                
                 cred = credentials.Certificate(cred_dict)
                 firebase_admin.initialize_app(cred, {"databaseURL": db_url})
                 print("✅ Firebase initialized using Render environment variables.")
@@ -47,37 +52,37 @@ def init_firebase():
             except Exception as e:
                 print(f"🔥 Firebase credential error: {e}")
                 raise
+
+        # 🟢 3️⃣ Try Local File (for local dev)
         else:
-            # 🟢 Running locally
             local_path = os.path.join(os.path.dirname(__file__), "serviceAccountKey.json")
-            if not os.path.exists(local_path):
+            if os.path.exists(local_path):
+                cred = credentials.Certificate(local_path)
+                firebase_admin.initialize_app(cred, {
+                    "databaseURL": "https://spaceinvadersjava-default-rtdb.firebaseio.com/"
+                })
+                print("✅ Firebase initialized using local credentials.")
+            else:
                 print(f"⚠️ Local credential file not found at {local_path}")
                 print("⚠️ Attempting to use environment variables as fallback...")
                 
-                # Fallback: try to use environment variables even if not explicitly set
                 if not cred_json:
                     raise FileNotFoundError(
-                        f"Firebase credential file not found at {local_path} and FIREBASE_CRED environment variable not set.\n"
+                        f"Firebase credential file not found at {local_path} and FIREBASE_CRED not set.\n"
                         "Please either:\n"
-                        "1. Place serviceAccountKey.json in the SpaceInvaderJava directory, OR\n"
-                        "2. Set FIREBASE_CRED and FIREBASE_DB_URL environment variables"
+                        "1. Place serviceAccountKey.json in SpaceInvaderJava directory, OR\n"
+                        "2. Set FIREBASE_CRED & FIREBASE_DB_URL env vars, OR\n"
+                        "3. Upload key via Render → Secret Files."
                     )
                 else:
-                    # Use environment variables as fallback
                     cred_json = cred_json.replace('\\n', '\n').replace('\\\\n', '\n')
                     cred_dict = json.loads(cred_json)
                     if 'private_key' in cred_dict:
                         cred_dict['private_key'] = cred_dict['private_key'].replace('\\n', '\n')
                     cred = credentials.Certificate(cred_dict)
-                    db_url = db_url or "https://space-invaders-java-default-rtdb.firebaseio.com/"
+                    db_url = db_url or "https://spaceinvadersjava-default-rtdb.firebaseio.com/"
                     firebase_admin.initialize_app(cred, {"databaseURL": db_url})
                     print("✅ Firebase initialized using environment variables (fallback).")
-            else:
-                cred = credentials.Certificate(local_path)
-                firebase_admin.initialize_app(cred, {
-                    "databaseURL": "https://space-invaders-java-default-rtdb.firebaseio.com/"
-                })
-                print("✅ Firebase initialized using local credentials.")
 
         return firebase_admin.get_app()
 
