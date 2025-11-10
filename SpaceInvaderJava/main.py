@@ -2,7 +2,9 @@ import pygame, sys, os, random, asyncio
 from random import shuffle
 from datetime import datetime
 import mysql.connector
-from google.auth.transport import requests
+from dotenv import load_dotenv
+import requests
+from api_server import TIDB_CONFIG, API_SERVER
 
 # --- INIT ---
 
@@ -79,14 +81,7 @@ web_db = WebDatabase()
 # --- TIDB DATABASE CONNECTION ---
 def get_tidb_connection():
     try:
-        conn = mysql.connector.connect(
-            host="gateway01.ap-southeast-1.prod.aws.tidbcloud.com",  # example TiDB endpoint
-            user="your_tidb_username",
-            password="your_tidb_password",
-            database="space_invaders_db",
-            ssl_ca="isrgrootx1.pem",  # only if TiDB requires SSL
-            port=4000
-        )
+        conn = mysql.connector.connect(TIDB_CONFIG)
         return conn
     except Exception as e:
         print(f"❌ TiDB connection failed: {e}")
@@ -94,53 +89,29 @@ def get_tidb_connection():
 
 # --- DATABASE FUNCTIONS ---
 def save_score_to_db(player_name, score, level):
-    conn = get_tidb_connection()
-    if not conn:
-        web_db.save_score(player_name, score, level)
-        return
-
     try:
-        cursor = conn.cursor()
-        cursor.execute("""
-            CREATE TABLE IF NOT EXISTS leaderboard (
-                id INT AUTO_INCREMENT PRIMARY KEY,
-                player_name VARCHAR(50),
-                score INT,
-                level INT,
-                last_played DATETIME
-            )
-        """)
-        cursor.execute("SELECT score FROM leaderboard WHERE player_name=%s", (player_name,))
-        existing = cursor.fetchone()
-        if existing:
-            if score > existing[0]:
-                cursor.execute("UPDATE leaderboard SET score=%s, level=%s, last_played=%s WHERE player_name=%s",
-                               (score, level, datetime.now(), player_name))
+        payload = {"player_name": player_name, "score": score, "level": level}
+        response = requests.post(f"{API_SERVER}/api/save_score", json=payload)
+        if response.status_code == 200:
+            print("✅ Score saved via API")
         else:
-            cursor.execute("INSERT INTO leaderboard (player_name, score, level, last_played) VALUES (%s, %s, %s, %s)",
-                           (player_name, score, level, datetime.now()))
-        conn.commit()
-        cursor.close()
-        conn.close()
-        print("✅ Score saved to TiDB")
+            print(f"⚠️ API save failed: {response.text}")
+            web_db.save_score(player_name, score, level)
     except Exception as e:
-        print(f"⚠️ Failed to save score to TiDB: {e}")
+        print(f"⚠️ Could not reach API: {e}")
         web_db.save_score(player_name, score, level)
 
 def get_leaderboard():
-    conn = get_tidb_connection()
-    if not conn:
-        return web_db.get_leaderboard(10)
-
     try:
-        cursor = conn.cursor()
-        cursor.execute("SELECT player_name, score FROM leaderboard ORDER BY score DESC LIMIT 10")
-        data = cursor.fetchall()
-        cursor.close()
-        conn.close()
-        return data
+        response = requests.get(f"{API_SERVER}/api/leaderboard")
+        if response.status_code == 200:
+            data = response.json()
+            return [(entry["player_name"], entry.get("score", 0)) for entry in data]
+        else:
+            print("⚠️ Failed to fetch leaderboard:", response.text)
+            return web_db.get_leaderboard(10)
     except Exception as e:
-        print(f"⚠️ Failed to fetch leaderboard from TiDB: {e}")
+        print(f"API fetch failed: {e}")
         return web_db.get_leaderboard(10)
 
 # --- QUESTIONS ---
@@ -587,3 +558,5 @@ async def main():
 # Start the game
 if __name__ == "__main__":
     asyncio.run(main())
+
+
